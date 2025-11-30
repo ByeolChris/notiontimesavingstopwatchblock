@@ -248,11 +248,12 @@ const DATABASE_ID = "2bb9d8f310c180f5af8ce5e2ef0490ef";
 async function sendToNotion(project, diffMs) {
   const minutes = Math.round(diffMs / 60000);
 
-  await fetch("https://notiontimesavingstopwatchblock.vercel.app/api/notion", {
-  method: "POST",
-  headers: { "Content-Type": "application/json" },
-  body: JSON.stringify({ project, minutes })
-});
+  await fetch("/api/notion", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ project, minutes })
+  });
+}
 
 // -------------------------------
 // 초기 실행
