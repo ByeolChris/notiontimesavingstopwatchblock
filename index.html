@@ -16,7 +16,7 @@
 </head>
 <body>
 
-<h2>프로젝트 타임 트래커 (Notion 연동)</h2>
+<h2>프로젝트 타임 트래커</h2>
 
 <!-- 프로젝트 선택 -->
 <select id="project" onchange="switchProject()"></select>
@@ -244,7 +244,6 @@ function formatMs(ms) {
 // Notion API 연동
 // -------------------------------
 
-const DATABASE_ID = "2bb9d8f310c180f5af8ce5e2ef0490ef";
 
 async function sendToNotion(project, diffMs) {
   const minutes = Math.round(diffMs / 60000);
