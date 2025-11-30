@@ -1,112 +1,269 @@
 <!DOCTYPE html>
 <html lang="ko">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Timesaving Stopwatch</title>
-  <style>
-    body { font-family: Arial, sans-serif; padding: 20px; }
-    h1 { text-align: center; }
-    .stopwatch { text-align: center; margin-top: 20px; }
-    .controls { margin-top: 20px; text-align: center; }
-    button { margin: 5px; padding: 10px 20px; font-size: 16px; }
-    select { padding: 5px 10px; font-size: 16px; }
-  </style>
+<meta charset="UTF-8">
+<title>Project Time Tracker</title>
+<style>
+  body { font-family: sans-serif; padding: 20px; max-width: 700px; margin: 0 auto; }
+  h2 { text-align: center; }
+  button, input, select { padding: 10px; margin: 5px; font-size: 16px; }
+  #time { font-size: 40px; text-align: center; margin: 20px 0; }
+  #project-list { margin-top: 20px; }
+  .project-item { display: flex; justify-content: space-between; margin: 5px 0; }
+  .report-box { border: 1px solid #aaa; padding: 10px; margin-top: 20px; }
+  pre { background: #f4f4f4; padding: 10px; overflow: auto; }
+</style>
 </head>
 <body>
 
-<h1>Timesaving Stopwatch</h1>
+<h2>프로젝트 타임 트래커</h2>
 
-<div>
-  <label for="projectSelect">프로젝트 선택: </label>
-  <select id="projectSelect">
-    <option value="Project A">Project A</option>
-    <option value="Project B">Project B</option>
-    <option value="Project C">Project C</option>
-  </select>
+<!-- 프로젝트 선택 -->
+<select id="project" onchange="switchProject()"></select>
+
+<!-- 시간 표시 -->
+<div id="time">00:00:00</div>
+
+<button onclick="start()">Start</button>
+<button onclick="stop()">Stop</button>
+<button onclick="reset()">Reset</button>
+
+<hr>
+
+<!-- 프로젝트 추가 -->
+<h3>프로젝트 관리</h3>
+<input id="newProjectName" placeholder="새 프로젝트 이름">
+<button onclick="addProject()">추가</button>
+
+<div id="project-list"></div>
+
+<hr>
+
+<!-- 리포트 -->
+<h3>리포트 (하루/주간 자동 생성)</h3>
+<div class="report-box">
+  <h4>오늘 리포트</h4>
+  <pre id="dailyReport"></pre>
 </div>
 
-<div class="stopwatch">
-  <h2 id="timer">00:00:00</h2>
-</div>
-
-<div class="controls">
-  <button id="startBtn">Start</button>
-  <button id="stopBtn">Stop</button>
-  <button id="resetBtn">Reset</button>
+<div class="report-box">
+  <h4>이번 주 리포트</h4>
+  <pre id="weeklyReport"></pre>
 </div>
 
 <script>
-  // -------------------------------
-  // 스톱워치 로직
-  // -------------------------------
-  let startTime = null;
-  let elapsed = 0;
-  let timerInterval = null;
+// -------------------------------
+// 데이터 관리(LocalStorage)
+// -------------------------------
+function getProjects() {
+    return JSON.parse(localStorage.getItem("projects") || "[]");
+}
+function saveProjects(projects) {
+    localStorage.setItem("projects", JSON.stringify(projects));
+}
 
-  const timerDisplay = document.getElementById('timer');
-  const projectSelect = document.getElementById('projectSelect');
+// 프로젝트별 누적 시간(ms)
+function loadTime(project) {
+    return parseInt(localStorage.getItem("time_" + project)) || 0;
+}
+function saveTime(project, time) {
+    localStorage.setItem("time_" + project, time);
+}
 
-  function formatTime(ms) {
-    const totalSeconds = Math.floor(ms / 1000);
-    const h = String(Math.floor(totalSeconds / 3600)).padStart(2, '0');
-    const m = String(Math.floor((totalSeconds % 3600) / 60)).padStart(2, '0');
-    const s = String(totalSeconds % 60).padStart(2, '0');
-    return `${h}:${m}:${s}`;
-  }
+// 리포트 기록 (날짜별 ms 기록)
+function addDailyLog(project, ms) {
+    const day = new Date().toISOString().split("T")[0];
+    const key = `daily_${project}_${day}`;
+    const prev = parseInt(localStorage.getItem(key)) || 0;
+    localStorage.setItem(key, prev + ms);
+}
 
-  function updateTimer() {
-    const now = Date.now();
-    const diff = elapsed + (now - startTime);
-    timerDisplay.textContent = formatTime(diff);
-  }
+function addWeeklyLog(project, ms) {
+    const now = new Date();
+    const year = now.getFullYear();
+    const week = Math.ceil((((now - new Date(year,0,1)) / 86400000) + new Date(year,0,1).getDay() + 1) / 7);
+    const key = `weekly_${project}_${year}_W${week}`;
+    const prev = parseInt(localStorage.getItem(key)) || 0;
+    localStorage.setItem(key, prev + ms);
+}
 
-  document.getElementById('startBtn').addEventListener('click', () => {
-    if (!startTime) {
-      startTime = Date.now();
-      timerInterval = setInterval(updateTimer, 500);
-    }
-  });
+// -------------------------------
+// UI 업데이트
+// -------------------------------
+function refreshProjectListUI() {
+    const list = document.getElementById("project-list");
+    const projects = getProjects();
+    list.innerHTML = "";
 
-  document.getElementById('stopBtn').addEventListener('click', async () => {
-    if (startTime) {
-      const now = Date.now();
-      const diffMs = elapsed + (now - startTime);
-      elapsed += (now - startTime);
-      startTime = null;
-      clearInterval(timerInterval);
+    projects.forEach(p => {
+        const div = document.createElement("div");
+        div.className = "project-item";
+        div.innerHTML = `
+            <span>${p}</span>
+            <button onclick="deleteProject('${p}')">삭제</button>
+        `;
+        list.appendChild(div);
+    });
 
-      const project = projectSelect.value;
-      await sendToNotion(project, diffMs); // Vercel API로 기록 전송
-    }
-  });
+    refreshProjectSelector();
+}
 
-  document.getElementById('resetBtn').addEventListener('click', () => {
-    startTime = null;
-    elapsed = 0;
+function refreshProjectSelector() {
+    const select = document.getElementById("project");
+    const projects = getProjects();
+
+    select.innerHTML = "";
+    projects.forEach(p => {
+        const opt = document.createElement("option");
+        opt.value = p;
+        opt.textContent = p;
+        select.appendChild(opt);
+    });
+
+    if (projects.length > 0) switchProject();
+}
+
+// -------------------------------
+// 프로젝트 추가 / 삭제
+// -------------------------------
+function addProject() {
+    const name = document.getElementById("newProjectName").value.trim();
+    if (!name) return alert("프로젝트 이름을 입력하세요.");
+
+    const projects = getProjects();
+    if (projects.includes(name)) return alert("이미 존재하는 프로젝트입니다.");
+
+    projects.push(name);
+    saveProjects(projects);
+    document.getElementById("newProjectName").value = "";
+    refreshProjectListUI();
+}
+
+function deleteProject(name) {
+    const projects = getProjects().filter(p => p !== name);
+    saveProjects(projects);
+    localStorage.removeItem("time_" + name);
+    refreshProjectListUI();
+}
+
+// -------------------------------
+// 시간 표시
+// -------------------------------
+let startTime = 0;
+let timerInterval;
+let elapsed = 0;
+
+function updateDisplay(ms) {
+    const h = String(Math.floor(ms / 3600000)).padStart(2, '0');
+    const m = String(Math.floor((ms % 3600000) / 60000)).padStart(2, '0');
+    const s = String(Math.floor((ms % 60000) / 1000)).padStart(2, '0');
+    document.getElementById('time').textContent = `${h}:${m}:${s}`;
+}
+
+function update() {
+    const now = Date.now() - startTime + elapsed;
+    updateDisplay(now);
+}
+
+function start() {
+    if (timerInterval) return;
+    startTime = Date.now();
+    timerInterval = setInterval(update, 200);
+}
+
+function stop() {
+    if (!timerInterval) return;
     clearInterval(timerInterval);
-    timerDisplay.textContent = '00:00:00';
-  });
+    timerInterval = null;
 
-  // -------------------------------
-  // Notion API 연동 (Vercel)
-  // -------------------------------
-  const VERCEL_API_URL = "https://notiontimesavingstopwatchblock.vercel.app/api/notion";
+    const project = document.getElementById('project').value;
 
-  async function sendToNotion(project, diffMs) {
-    const minutes = Math.round(diffMs / 60000);
-    try {
-      const res = await fetch(VERCEL_API_URL, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ project, minutes })
-      });
-      const data = await res.json();
-      console.log("Notion 기록 성공:", data);
-    } catch (err) {
-      console.error("Notion 기록 실패:", err);
+    const diff = Date.now() - startTime;
+    elapsed += diff;
+
+    saveTime(project, elapsed);
+    addDailyLog(project, diff);
+    addWeeklyLog(project, diff);
+
+    updateDisplay(elapsed);
+
+    sendToNotion(project, diff);
+    generateReports();
+}
+
+function reset() {
+    const project = document.getElementById('project').value;
+    stop();
+    elapsed = 0;
+    saveTime(project, 0);
+    updateDisplay(0);
+}
+
+function switchProject() {
+    stop();
+    const project = document.getElementById("project").value;
+    elapsed = loadTime(project);
+    updateDisplay(elapsed);
+}
+
+// -------------------------------
+// 리포트 생성
+// -------------------------------
+function generateReports() {
+    const projects = getProjects();
+    const today = new Date().toISOString().split("T")[0];
+
+    let daily = "";
+    let weekly = "";
+
+    const now = new Date();
+    const year = now.getFullYear();
+    const week = Math.ceil((((now - new Date(year,0,1)) / 86400000) + new Date(year,0,1).getDay() + 1) / 7);
+
+    projects.forEach(p => {
+        const dailyKey = `daily_${p}_${today}`;
+        const dailyMs = parseInt(localStorage.getItem(dailyKey)) || 0;
+        daily += `${p}: ${formatMs(dailyMs)}\n`;
+
+        const weeklyKey = `weekly_${p}_${year}_W${week}`;
+        const weeklyMs = parseInt(localStorage.getItem(weeklyKey)) || 0;
+        weekly += `${p}: ${formatMs(weeklyMs)}\n`;
+    });
+
+    document.getElementById("dailyReport").textContent = daily;
+    document.getElementById("weeklyReport").textContent = weekly;
+}
+
+function formatMs(ms) {
+    const h = Math.floor(ms / 3600000);
+    const m = Math.floor((ms % 3600000) / 60000);
+    return `${h}h ${m}m`;
+}
+
+// Notion API 연동
+// -------------------------------
+
+const DATABASE_ID = "2bb9d8f310c180f5af8ce5e2ef0490ef";
+
+async function sendToNotion(project, diffMs) {
+  const minutes = Math.round(diffMs / 60000);
+
+  await fetch("https://notiontimesavingstopwatchblock.vercel.app/api/notion", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({ project, minutes })
+});
+
+// -------------------------------
+// 초기 실행
+// -------------------------------
+window.onload = function () {
+    if (getProjects().length === 0) {
+        saveProjects(["Project A", "Project B"]);
     }
-  }
+    refreshProjectListUI();
+    generateReports();
+};
 </script>
 
 </body>
